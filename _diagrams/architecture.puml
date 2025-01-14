@@ -1,0 +1,86 @@
+@startuml
+allowmixing
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 93
+
+title Krateo FinOps - Data Presentation
+
+package "Krateo Composable Portal" {
+  json Template {
+    "Portal" : ["CR_Card", "CR_Row", "..."], 
+    "CompositionDefinition" : "Ref"
+  }
+  json CompositionDefinition {
+  "Portal" : ["CR_Row", "CR_Card", "CR_Tabpane", "..."],
+  "Automation" : ["CR_VM", "CR_Network", "CR_Storage", "..."],
+  "FinOps" : ["CR_ExporterScraperConfig", "..."]
+  }
+  note as N1
+  Annotation
+  "krateo-finops-focus-resource": "..."
+  end note
+}
+
+package "Krateo Composable FinOps" {
+  database CrateDB
+  component "finops-database-handler"
+}
+
+object "composition-definition-parser" {
+Detects "ExternalResourceCreated"
+events on all composition 
+definitions
+}
+
+
+CompositionDefinition <- "composition-definition-parser" : Download Helm chart
+"finops-database-handler" <- "composition-definition-parser" : \n\n\nParse and\nstore annotations
+
+
+"finops-database-handler" <-> CrateDB : Pricing\ninformation
+Template <-- "finops-database-handler" : Detailed or\nAggregated\nCosts
+Template ---> "finops-database-handler" : \n\n\n\n\n\n\nSend CompositionDefinition UID\non cost estimation endpoint\n(notebook)
+Template -> CompositionDefinition
+N1 -> CompositionDefinition
+
+object "RestConfig" {
+  <service provider openapi schema>
+}
+
+object "DataPresentationProvider\n(CRD)" {
+  resourceName: ...
+  Zone: ...
+  ...
+}
+
+component "Kubernetes Operator\nGenerator (KOG)"
+component "FocusDataPresentation CDC"
+component RDC
+
+"RestConfig" --> "Kubernetes Operator\nGenerator (KOG)"
+"Kubernetes Operator\nGenerator (KOG)" -> RDC
+"Kubernetes Operator\nGenerator (KOG)" --> "DataPresentationProvider\n(CRD)" : Create
+
+
+package "Focus Data Presentation Composition" {
+  json DataPresentationProvider {
+  "annotations": ["focusResourceName: <same as annotation>"],
+    "zone": "...",
+    "resourceName": "..."
+  }
+  object FocusConfig {
+    <with data compiled by CDC at runtime>
+  }
+}
+
+"FocusDataPresentation CDC" -[hidden]> "DataPresentationProvider\n(CRD)"
+
+"Kubernetes Operator\nGenerator (KOG)" -[hidden]> CrateDB
+
+"DataPresentationProvider\n(CRD)" .> DataPresentationProvider : "\tCR"
+"FocusDataPresentation CDC" <--> DataPresentationProvider
+"FocusDataPresentation CDC" -> FocusConfig : vendor-specific\npricing information
+"finops-database-handler" <--- FocusConfig : exporter/scraper flow\nto store FOCUS\nrows with pricing\ninformation only
+
+@enduml
