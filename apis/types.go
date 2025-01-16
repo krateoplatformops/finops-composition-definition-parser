@@ -1,5 +1,7 @@
 package apis
 
+import rtv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
+
 type Reference struct {
 	ApiVersion string `json:"apiVersion"`
 	Resource   string `json:"resource"`
@@ -18,33 +20,6 @@ type DatabaseConfig struct {
 }
 
 type DatabaseConfigSpec struct {
-	Username          string            `json:"username"`
-	PasswordSecretRef SecretKeySelector `json:"passwordSecretRef"`
-}
-
-// A SecretKeySelector is a reference to a secret key in an arbitrary namespace.
-type SecretKeySelector struct {
-	// Name of the referenced object.
-	Name string `json:"name"`
-
-	// Namespace of the referenced object.
-	Namespace string `json:"namespace"`
-
-	// The key to select.
-	Key string `json:"key"`
-}
-
-// DeepCopy copy the receiver, creates a new SecretKeySelector.
-func (in *SecretKeySelector) DeepCopy() *SecretKeySelector {
-	if in == nil {
-		return nil
-	}
-	out := new(SecretKeySelector)
-	in.DeepCopyInto(out)
-	return out
-}
-
-// DeepCopyInto copy the receiver, writes into out. in must be non-nil.
-func (in *SecretKeySelector) DeepCopyInto(out *SecretKeySelector) {
-	*out = *in
+	Username          string                 `json:"username"`
+	PasswordSecretRef rtv1.SecretKeySelector `json:"passwordSecretRef"`
 }

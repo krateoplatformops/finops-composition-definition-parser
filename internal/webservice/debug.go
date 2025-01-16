@@ -14,11 +14,12 @@ func debugLoggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Log request
 		requestIdentifier := c.Request.Method + " " + c.Request.RequestURI
-		requestDump, err := httputil.DumpRequest(c.Request, true)
+		_, err := httputil.DumpRequest(c.Request, true)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to dump request")
 		} else {
-			log.Debug().Msgf("Incoming request on %s:\n%s", requestIdentifier, string(requestDump))
+			//log.Debug().Msgf("Incoming request on %s:\n%s", requestIdentifier, string(requestDump))
+			log.Debug().Msgf("Incoming request on %s", requestIdentifier)
 		}
 
 		// Create a response writer that captures the response
@@ -35,7 +36,8 @@ func debugLoggerMiddleware() gin.HandlerFunc {
 		}
 		responseDump += "\n" + blw.body.String()
 
-		log.Debug().Msgf("Outgoing response for %s:\n%s", requestIdentifier, responseDump)
+		//log.Debug().Msgf("Outgoing response for %s:\n%s", requestIdentifier, responseDump)
+		log.Debug().Msgf("Outgoing response for %s", requestIdentifier)
 	}
 }
 

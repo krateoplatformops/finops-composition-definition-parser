@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/rs/zerolog/log"
 )
 
-func CallNotebook(webserviceUrl string, compositionDefinitionId string, jsonObject []byte, dbUsername string, dbPassword string) error {
+func CallNotebook(webserviceUrl string, operation string, compositionDefinitionId string, jsonObject []byte, annotationTable string, dbUsername string, dbPassword string) error {
 	parameters := map[string]string{
-		"composition_id": compositionDefinitionId,
-		"json_list":      string(jsonObject),
+		"operation":        operation,
+		"composition_id":   compositionDefinitionId,
+		"json_list":        string(jsonObject),
+		"annotation_table": annotationTable,
 	}
 
 	parametersJson, err := json.Marshal(parameters)
@@ -33,10 +37,12 @@ func CallNotebook(webserviceUrl string, compositionDefinitionId string, jsonObje
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("server returned non-200 status code: %d, body: %s", resp.StatusCode, string(body))
 	}
+
+	log.Info().Msgf("Notebook call response body: %s", string(body))
 
 	return nil
 }

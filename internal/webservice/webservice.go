@@ -21,7 +21,6 @@ import (
 	types "finops-composition-definition-parser/apis"
 	chartHelper "finops-composition-definition-parser/internal/helpers/chart"
 	kubeHelper "finops-composition-definition-parser/internal/helpers/kube/client"
-	secretsHelper "finops-composition-definition-parser/internal/helpers/kube/secrets"
 	notebookHelper "finops-composition-definition-parser/internal/helpers/notebook"
 )
 
@@ -34,6 +33,7 @@ type Webservice struct {
 	WebservicePort  int
 	NotebookUrl     string
 	AnnotationLabel string
+	AnnotationTable string
 	Config          *rest.Config
 	DynClient       *dynamic.DynamicClient
 	DatabaseConfig  types.NamespaceName
@@ -81,8 +81,23 @@ func (r *Webservice) handleAllEvents(c *gin.Context) {
 		Namespace:  event.InvolvedObject.Namespace,
 	}
 
+	dbUsername, dbPassword, err := kubeHelper.GetDatabaseUsernamePassword(c.Request.Context(), r.DatabaseConfig.Name, r.DatabaseConfig.Namespace, r.DynClient, r.Config)
+	if err != nil {
+		log.Error().Err(err).Msg("error while retrieving database username and password")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error while handling %s event: %s", event.Reason, err)})
+		return
+	}
+
+	// Get the composition definition unique id, used as primary key in the database
+	comppositionId := string(event.InvolvedObject.UID)
+
 	if event.Reason == "DeletedExternalResource" {
 		log.Info().Msgf("'%s' event for composition definition %s %s %s %s", event.Reason, composition.ApiVersion, composition.Resource, composition.Name, composition.Namespace)
+		if err := notebookHelper.CallNotebook(r.NotebookUrl, "delete", comppositionId, []byte("{}"), r.AnnotationTable, dbUsername, dbPassword); err != nil {
+			log.Error().Err(err).Msg("error while calling notebook")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error while handling %s event: %s", event.Reason, err)})
+			return
+		}
 		return
 	}
 
@@ -105,7 +120,8 @@ func (r *Webservice) handleAllEvents(c *gin.Context) {
 
 		// Download, extract and then cleanup the download
 		defer chartHelper.CleanupDirectory(compositionObject.Spec.Chart.Repo)
-		if err := chartHelper.DownloadChart(compositionObject.Spec.Chart.Url, compositionObject.Spec.Chart.Repo, compositionObject.Spec.Chart.Version, "./"); err != nil {
+		_, err = chartHelper.ChartInfoFromSpec(compositionObject.Spec.Chart, "./", r.Config)
+		if err != nil {
 			log.Error().Err(err).Msg("error while downloading and extracting chart")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error while handling %s event: %s", event.Reason, err)})
 			return
@@ -126,50 +142,12 @@ func (r *Webservice) handleAllEvents(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error while handling %s event: %s", event.Reason, err)})
 			return
 		}
-		// Get the composition definition unique id, used as primary key in the database
-		comppositionId := string(event.InvolvedObject.UID)
 
-		// DatabaseConfig to access the database
-		databaseConfigReference := &types.Reference{
-			ApiVersion: "finops.krateo.io/v1",
-			Kind:       "DatabaseConfig",
-			Resource:   "databaseconfigs",
-			Name:       r.DatabaseConfig.Name,
-			Namespace:  r.DatabaseConfig.Namespace,
-		}
-		// Get the unstructured object
-		databaseConfigUnstructured, err := kubeHelper.GetObj(c.Request.Context(), databaseConfigReference, r.DynClient)
-		if err != nil {
-			log.Error().Err(err).Msg("error while retrieving database config")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error while handling %s event: %s", event.Reason, err)})
-			return
-		}
-
-		// Transform the unstructured object into its actual type
-		databaseConfig := &types.DatabaseConfig{}
-		err = runtime.DefaultUnstructuredConverter.FromUnstructured(databaseConfigUnstructured.Object, databaseConfig)
-		if err != nil {
-			log.Error().Err(err).Msg("unable to convert from unstructured to database config")
-		}
-		databaseConfigSpec := databaseConfig.Spec
-
-		// The password field is a reference to a secret, get the secret
-		dbPasswordSecret, err := secretsHelper.Get(c.Request.Context(), r.Config, &databaseConfigSpec.PasswordSecretRef)
-		if err != nil {
-			log.Error().Err(err).Msg("error while retrieving database password secret")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error while handling %s event: %s", event.Reason, err)})
-			return
-		}
-
-		// Use the username and password to call the notebook
-		dbPassword := string(dbPasswordSecret.Data[databaseConfigSpec.PasswordSecretRef.Key])
-		dbUsername := databaseConfigSpec.Username
-		if err := notebookHelper.CallNotebook(r.NotebookUrl, comppositionId, jsonObject, dbUsername, dbPassword); err != nil {
+		if err := notebookHelper.CallNotebook(r.NotebookUrl, "create", comppositionId, jsonObject, r.AnnotationTable, dbUsername, dbPassword); err != nil {
 			log.Error().Err(err).Msg("error while calling notebook")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error while handling %s event: %s", event.Reason, err)})
 			return
 		}
-
 	}
 }
 
