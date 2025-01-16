@@ -52,6 +52,7 @@ func main() {
 		Config:          rcConfig,
 		WebservicePort:  configuration.WebServicePort,
 		AnnotationLabel: configuration.AnnotationLabel,
+		AnnotationTable: configuration.AnnotationTable,
 		DynClient:       dynClient,
 		NotebookUrl:     configuration.WebserviceUrl,
 		DatabaseConfig:  configuration.DatabaseConfig,

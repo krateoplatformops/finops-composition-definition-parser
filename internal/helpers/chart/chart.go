@@ -2,17 +2,23 @@ package chart
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v2"
+	"k8s.io/client-go/rest"
+
+	getter "finops-composition-definition-parser/internal/helpers/chart/getter"
+	secretsHelper "finops-composition-definition-parser/internal/helpers/kube/secrets"
+
+	coreprovider "github.com/krateoplatformops/core-provider/apis/compositiondefinitions/v1alpha1"
 )
 
 // ChartIndex represents the structure of a Helm chart index.yaml file
@@ -26,63 +32,40 @@ type ChartEntry struct {
 	URLs       []string `yaml:"urls"`
 }
 
-func DownloadChart(chartURL, chartRepo, chartVersion, extractPath string) error {
-	// Ensure URL ends with index.yaml
-	if !strings.Contains(chartURL, "/index.yaml") {
-		chartURL = strings.TrimRight(chartURL, "/") + "/index.yaml"
+func ChartInfoFromSpec(nfo *coreprovider.ChartInfo, extractPath string, rc *rest.Config) (rootDir string, err error) {
+	if nfo == nil {
+		return "", fmt.Errorf("chart infos cannot be nil")
 	}
 
-	// Download and parse index.yaml
-	resp, err := http.Get(chartURL)
-	if err != nil {
-		return fmt.Errorf("error downloading index.yaml: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("error downloading index.yaml: status code %d", resp.StatusCode)
+	opts := getter.GetOptions{
+		URI:                   nfo.Url,
+		Version:               nfo.Version,
+		Repo:                  nfo.Repo,
+		InsecureSkipVerifyTLS: nfo.InsecureSkipVerifyTLS,
 	}
 
-	var chartIndex ChartIndex
-	decoder := yaml.NewDecoder(resp.Body)
-	if err := decoder.Decode(&chartIndex); err != nil {
-		return fmt.Errorf("error parsing index.yaml: %v", err)
-	}
-
-	// Find the specific chart version
-	entries, exists := chartIndex.Entries[chartRepo]
-	if !exists {
-		return fmt.Errorf("chart repository %s not found", chartRepo)
-	}
-
-	var tgzFileURL string
-	for _, chart := range entries {
-		if chart.AppVersion == chartVersion && len(chart.URLs) > 0 {
-			baseURL := strings.TrimSuffix(chartURL, "/index.yaml")
-			tgzFileURL = baseURL + "/" + chart.URLs[0]
-			break
+	if nfo.Credentials != nil {
+		secret, err := secretsHelper.Get(context.TODO(), rc, &nfo.Credentials.PasswordRef)
+		if err != nil {
+			return "", fmt.Errorf("failed to get secret: %w", err)
 		}
+		opts.Username = nfo.Credentials.Username
+		opts.Password = string(secret.Data[nfo.Credentials.PasswordRef.Key])
+		opts.PassCredentialsAll = true
 	}
 
-	if tgzFileURL == "" {
-		return fmt.Errorf("chart version %s not found", chartVersion)
+	dat, _, err := getter.Get(opts)
+	if err != nil {
+		return "", err
 	}
-
-	return downloadAndExtractTgz(tgzFileURL, extractPath)
+	return "", downloadAndExtractTgz(dat, extractPath)
 }
 
 // DownloadAndExtractTgz downloads a tgz file from a URL and extracts it
-func downloadAndExtractTgz(url string, extractPath string) error {
-	// Download the file
-	log.Debug().Msgf("Downloading from %s...", url)
-	resp, err := http.Get(url)
-	if err != nil {
-		return fmt.Errorf("error downloading file: %v", err)
-	}
-	defer resp.Body.Close()
-
+func downloadAndExtractTgz(tgz []byte, extractPath string) error {
 	// Create a gzip reader
-	gzr, err := gzip.NewReader(resp.Body)
+	bytesReader := bytes.NewReader(tgz)
+	gzr, err := gzip.NewReader(bytesReader)
 	if err != nil {
 		return fmt.Errorf("error creating gzip reader: %v", err)
 	}

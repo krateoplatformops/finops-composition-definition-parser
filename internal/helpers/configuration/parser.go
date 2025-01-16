@@ -9,12 +9,14 @@ import (
 	types "finops-composition-definition-parser/apis"
 
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 type Configuration struct {
 	WebServicePort  int                 `json:"webServicePort" yaml:"webServicePort"`
 	PluralizerUrl   string              `json:"pluralizerUrl" yaml:"pluralizerUrl"`
 	AnnotationLabel string              `json:"annotationLabel" yaml:"annotationLabel"`
+	AnnotationTable string              `json:"annotationTable" yaml:"annotationTable"`
 	DebugLevel      zerolog.Level       `json:"debugLevel" yaml:"debugLevel"`
 	WebserviceUrl   string              `json:"webserviceUrl" yaml:"webserviceUrl"`
 	DatabaseConfig  types.NamespaceName `json:"databaseConfigName" yaml:"databaseConfigName"`
@@ -51,9 +53,16 @@ func ParseConfig() (Configuration, error) {
 		return Configuration{}, fmt.Errorf("database config namespace cannot be empty")
 	}
 
+	annotationTable := os.Getenv("ANNOTATION_TABLE")
+	if annotationTable == "" {
+		annotationTable = "composition_definition_annotations"
+		log.Warn().Msgf("annotation table is empty, using default value '%s'", annotationTable)
+	}
+
 	annotationLabel := os.Getenv("ANNOTATION_LABEL")
 	if annotationLabel == "" {
-		return Configuration{}, fmt.Errorf("annotation label cannot be empty")
+		annotationLabel = "krateo-finops-focus-resource"
+		log.Warn().Msgf("annotation label is empty, using default value '%s'", annotationLabel)
 	}
 
 	debugLevel := zerolog.InfoLevel
@@ -70,6 +79,7 @@ func ParseConfig() (Configuration, error) {
 		PluralizerUrl:   pluralizerUrl,
 		DebugLevel:      debugLevel,
 		AnnotationLabel: annotationLabel,
+		AnnotationTable: annotationTable,
 		WebserviceUrl:   webserviceUrl,
 		DatabaseConfig:  types.NamespaceName{Name: databaseConfigName, Namespace: databaseConfigNamespace},
 	}, nil
