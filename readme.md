@@ -140,33 +140,21 @@ def main(pricing_table : str, annotation_table : str, composition_id : str):
                             result[inner_record[1]] += float(inner_record[0])
                         else:
                             result[inner_record[1]] = float(inner_record[0])
-        print(json.dumps(result))
-                        
+        print(json.dumps(result))                   
     except Exception as e:
         print(f"Could not insert keys into table: {str(e)}")
     finally:
         cursor.close()
 
 if __name__ == "__main__":
-    composition_id_key_value = sys.argv[5]
-    composition_id_key_value_split = str.split(composition_id_key_value, '=')
-    if composition_id_key_value_split[0] == 'composition_id':
-        composition_id = composition_id_key_value_split[1]
-
-    pricing_table_key_value = sys.argv[6]
-    pricing_table_key_value_split = str.split(pricing_table_key_value, '=')
-    if pricing_table_key_value_split[0] == 'pricing_table':
-        pricing_table = pricing_table_key_value_split[1]
-
-    annotation_table_key_value = sys.argv[7]
-    annotation_table_key_value_split = str.split(annotation_table_key_value, '=')
-    if annotation_table_key_value_split[0] == 'annotation_table':
-        annotation_table = annotation_table_key_value_split[1]
-
-    if pricing_table == '':
-        pricing_table = 'pricing_table'
-    if annotation_table == '':
-        annotation_table = 'composition_definition_annotations'
-
-    main(pricing_table, annotation_table, composition_id)
+    args = {'composition_id': '', 'pricing_table': 'pricing_table', 'annotation_table': 'composition_definition_annotations'}
+    for i in range(5, len(sys.argv)):
+        key_value = sys.argv[i]
+        key_value_split = str.split(key_value, '=')
+        if key_value_split[0] in args.keys():
+            args[key_value_split[0]] = key_value_split[1] if key_value_split[1] else args[key_value_split[0]]
+    for key in args:
+        if args[key] == '':
+            print('missing agument for call: ' + key)
+    main(args['pricing_table'], args['annotation_table'], args['composition_id'])
 ```
