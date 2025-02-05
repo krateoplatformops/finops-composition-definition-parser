@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v3"
 	"k8s.io/client-go/rest"
 
 	getter "finops-composition-definition-parser/internal/helpers/chart/getter"
@@ -30,6 +31,72 @@ type ChartIndex struct {
 type ChartEntry struct {
 	AppVersion string   `yaml:"appVersion"`
 	URLs       []string `yaml:"urls"`
+}
+
+// ValuesFile represents the structure of values.yaml
+type ValuesFile struct {
+	Values map[string]interface{}
+}
+
+// LoadValuesFile loads and parses the values.yaml file
+func LoadValuesFile(chartPath string) (*ValuesFile, error) {
+	valuesPath := filepath.Join(chartPath, "values.yaml")
+	content, err := os.ReadFile(valuesPath)
+	if err != nil {
+		return nil, fmt.Errorf("error reading values.yaml: %w", err)
+	}
+
+	values := &ValuesFile{
+		Values: make(map[string]interface{}),
+	}
+
+	if err := yaml.Unmarshal(content, &values.Values); err != nil {
+		return nil, fmt.Errorf("error parsing values.yaml: %w", err)
+	}
+
+	return values, nil
+}
+
+// resolveTemplateValue resolves a template expression like "{{ .Values.something.key }}"
+// to its actual value from values.yaml
+func resolveTemplateValue(templateExpr string, values *ValuesFile) (string, error) {
+	// Remove {{ }} and spaces
+	clean := strings.Trim(templateExpr, "{} ")
+	// Remove .Values. prefix
+	clean = strings.TrimPrefix(clean, ".Values.")
+
+	// Split the path
+	parts := strings.Split(clean, ".")
+
+	// Navigate through the values map
+	var current interface{} = values.Values
+	for _, part := range parts {
+		switch v := current.(type) {
+		case map[string]interface{}:
+			var ok bool
+			current, ok = v[part]
+			if !ok {
+				return "", fmt.Errorf("key %s not found in values", part)
+			}
+		default:
+			return "", fmt.Errorf("invalid path in values.yaml")
+		}
+	}
+
+	// Convert the final value to string
+	switch v := current.(type) {
+	case string:
+		return v, nil
+	case []interface{}:
+		// Handle array values
+		jsonBytes, err := json.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("error marshalling array value: %w", err)
+		}
+		return string(jsonBytes), nil
+	default:
+		return fmt.Sprintf("%v", v), nil
+	}
 }
 
 func ChartInfoFromSpec(nfo *coreprovider.ChartInfo, extractPath string, rc *rest.Config) (rootDir string, err error) {
@@ -114,8 +181,7 @@ func downloadAndExtractTgz(tgz []byte, extractPath string) error {
 }
 
 // ExtractFinopsResources extracts the finops resources from the file content
-
-func ExtractFinopsResources(content, annotationKey string) ([]string, error) {
+func ExtractFinopsResources(content, annotationKey string, chartPath string) ([]string, error) {
 	var resources []string
 
 	if strings.Contains(content, annotationKey) {
@@ -132,6 +198,23 @@ func ExtractFinopsResources(content, annotationKey string) ([]string, error) {
 				// Remove surrounding quotes if present
 				valuePart = strings.Trim(valuePart, "'\"")
 
+				// Check if the resource is a template
+				if strings.Contains(valuePart, "{{") && strings.Contains(valuePart, "}}") {
+					// Load values.yaml
+					values, err := LoadValuesFile(chartPath)
+					if err != nil {
+						log.Warn().Err(err).Msg("Failed to load values.yaml, using template as-is")
+					} else {
+						// Resolve the template value
+						resolved, err := resolveTemplateValue(valuePart, values)
+						if err != nil {
+							log.Warn().Err(err).Msg("Failed to resolve template value, using template as-is")
+						} else {
+							valuePart = resolved
+						}
+					}
+				}
+
 				// Parse JSON array
 				err := json.Unmarshal([]byte(valuePart), &resources)
 				if err != nil {
@@ -145,7 +228,7 @@ func ExtractFinopsResources(content, annotationKey string) ([]string, error) {
 }
 
 // ProcessTemplateFile processes a single template file
-func ProcessTemplateFile(filePath, annotationLabel string) ([]string, error) {
+func ProcessTemplateFile(filePath, annotationLabel, chartPath string) ([]string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return []string{}, fmt.Errorf("error reading file: %v", err)
@@ -153,15 +236,15 @@ func ProcessTemplateFile(filePath, annotationLabel string) ([]string, error) {
 
 	log.Debug().Msgf("Processing %s:", filepath.Base(filePath))
 
-	resources, err := ExtractFinopsResources(string(content), annotationLabel)
+	resources, err := ExtractFinopsResources(string(content), annotationLabel, chartPath)
 	if err != nil {
 		return []string{}, fmt.Errorf("error extracting resources: %v", err)
 	}
 
 	if resources != nil {
-		log.Debug().Msgf("Found finops resources: %v", resources)
+		log.Info().Msgf("Found finops resources: %v", resources)
 		for _, resource := range resources {
-			log.Debug().Msgf("Resource: %s", resource)
+			log.Info().Msgf("\t Resource: %s", resource)
 		}
 	}
 
@@ -186,7 +269,7 @@ func ProcessHelmTemplates(chartPath, annotationLabel string) (map[string]int, er
 		if !info.IsDir() {
 			ext := filepath.Ext(path)
 			if ext == ".yaml" || ext == ".yml" || ext == ".tpl" {
-				if resources, err := ProcessTemplateFile(path, annotationLabel); err == nil {
+				if resources, err := ProcessTemplateFile(path, annotationLabel, chartPath); err == nil {
 					for _, resource := range resources {
 						resourceMap[resource]++
 					}
@@ -197,6 +280,7 @@ func ProcessHelmTemplates(chartPath, annotationLabel string) (map[string]int, er
 		}
 		return nil
 	})
+
 	for key := range resourceMap {
 		log.Debug().Msgf("key: %s, value: %d", key, resourceMap[key])
 	}
