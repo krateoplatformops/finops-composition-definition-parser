@@ -60,10 +60,20 @@ func LoadValuesFile(chartPath string) (*ValuesFile, error) {
 // resolveTemplateValue resolves a template expression like "{{ .Values.something.key }}"
 // to its actual value from values.yaml
 func resolveTemplateValue(templateExpr string, values *ValuesFile) (string, error) {
-	// Remove {{ }} and spaces
-	clean := strings.Trim(templateExpr, "{} ")
+	// Remove {{ }} and spaces, handling potential whitespace between braces
+	clean := strings.TrimSpace(templateExpr)
+	if strings.HasPrefix(clean, "{{") && strings.HasSuffix(clean, "}}") {
+		clean = clean[2 : len(clean)-2]
+	}
+	clean = strings.TrimSpace(clean)
+
 	// Remove .Values. prefix
 	clean = strings.TrimPrefix(clean, ".Values.")
+
+	// If the path is empty after cleaning, return an error
+	if clean == "" {
+		return "", fmt.Errorf("empty template path after cleaning")
+	}
 
 	// Split the path
 	parts := strings.Split(clean, ".")
@@ -71,6 +81,11 @@ func resolveTemplateValue(templateExpr string, values *ValuesFile) (string, erro
 	// Navigate through the values map
 	var current interface{} = values.Values
 	for _, part := range parts {
+		part = strings.TrimSpace(part) // Handle any whitespace between path components
+		if part == "" {
+			continue // Skip empty parts
+		}
+
 		switch v := current.(type) {
 		case map[string]interface{}:
 			var ok bool
@@ -198,14 +213,36 @@ func ExtractFinopsResources(content, annotationKey string, chartPath string) ([]
 				// Remove surrounding quotes if present
 				valuePart = strings.Trim(valuePart, "'\"")
 
-				// Check if the resource is a template
+				// First try to unmarshal as is
+				err := json.Unmarshal([]byte(valuePart), &resources)
+				if err == nil {
+					// If successful, check each resource for templates
+					for i, resource := range resources {
+						if strings.Contains(resource, "{{") && strings.Contains(resource, "}}") {
+							values, err := LoadValuesFile(chartPath)
+							if err != nil {
+								log.Warn().Err(err).Msg("Failed to load values.yaml, using template as-is")
+								continue
+							}
+
+							resolved, err := resolveTemplateValue(resource, values)
+							if err != nil {
+								log.Warn().Err(err).Msg("Failed to resolve template value, using template as-is")
+								continue
+							}
+							resources[i] = resolved
+						}
+					}
+					return resources, nil
+				}
+
+				// If direct unmarshal failed, try to resolve any templates first
 				if strings.Contains(valuePart, "{{") && strings.Contains(valuePart, "}}") {
-					// Load values.yaml
+					// This is for handling the entire array as a template
 					values, err := LoadValuesFile(chartPath)
 					if err != nil {
 						log.Warn().Err(err).Msg("Failed to load values.yaml, using template as-is")
 					} else {
-						// Resolve the template value
 						resolved, err := resolveTemplateValue(valuePart, values)
 						if err != nil {
 							log.Warn().Err(err).Msg("Failed to resolve template value, using template as-is")
@@ -215,8 +252,8 @@ func ExtractFinopsResources(content, annotationKey string, chartPath string) ([]
 					}
 				}
 
-				// Parse JSON array
-				err := json.Unmarshal([]byte(valuePart), &resources)
+				// Try to unmarshal again after template resolution
+				err = json.Unmarshal([]byte(valuePart), &resources)
 				if err != nil {
 					return nil, fmt.Errorf("error parsing annotation value: %v", err)
 				}
