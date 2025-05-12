@@ -20,8 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var PLURALIZER_URL = ""
-
 func NewDynamicClient(rc *rest.Config) (*dynamic.DynamicClient, error) {
 	config := *rc
 	config.APIPath = "/api"
@@ -112,10 +110,4 @@ func GetDatabaseUsernamePassword(ctx context.Context, databaseConfigName, databa
 	dbUsername := databaseConfigSpec.Username
 
 	return dbUsername, dbPassword, nil
-}
-
-type names struct {
-	Plural   string   `json:"plural"`
-	Singular string   `json:"singular"`
-	Shorts   []string `json:"shorts"`
 }
