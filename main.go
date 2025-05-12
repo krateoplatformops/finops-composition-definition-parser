@@ -32,8 +32,6 @@ func main() {
 		log.Debug().Msg(s)
 	}
 
-	kubeHelper.PLURALIZER_URL = configuration.PluralizerUrl
-
 	// Kubernetes configuration
 	rcConfig, err := rest.InClusterConfig()
 	if err != nil {

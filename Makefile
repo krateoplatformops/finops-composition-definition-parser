@@ -8,3 +8,6 @@ build:
 container:
 	docker build -t $(REPO)finops-composition-definition-parser:$(VERSION) .
 	docker push $(REPO)finops-composition-definition-parser:$(VERSION)
+
+container-multi:
+	docker buildx build --tag $(REPO)finops-composition-definition-parser:$(VERSION) --push --platform linux/amd64,linux/arm64 .

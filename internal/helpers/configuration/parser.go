@@ -14,7 +14,6 @@ import (
 
 type Configuration struct {
 	WebServicePort  int                 `json:"webServicePort" yaml:"webServicePort"`
-	PluralizerUrl   string              `json:"pluralizerUrl" yaml:"pluralizerUrl"`
 	AnnotationLabel string              `json:"annotationLabel" yaml:"annotationLabel"`
 	AnnotationTable string              `json:"annotationTable" yaml:"annotationTable"`
 	DebugLevel      zerolog.Level       `json:"debugLevel" yaml:"debugLevel"`
@@ -31,11 +30,6 @@ func ParseConfig() (Configuration, error) {
 	port, err := strconv.Atoi(os.Getenv("PORT_FINOPS_COMPOSITION_DEFINITION_PARSER"))
 	if err != nil {
 		return Configuration{}, err
-	}
-
-	pluralizerUrl := os.Getenv("URL_PLURALS")
-	if pluralizerUrl == "" {
-		return Configuration{}, fmt.Errorf("pluralizer URL cannot be empty")
 	}
 
 	webserviceUrl := os.Getenv("URL_DATABASE_HANDLER_PRICING_NOTEBOOK")
@@ -76,7 +70,6 @@ func ParseConfig() (Configuration, error) {
 	}
 	return Configuration{
 		WebServicePort:  port,
-		PluralizerUrl:   pluralizerUrl,
 		DebugLevel:      debugLevel,
 		AnnotationLabel: annotationLabel,
 		AnnotationTable: annotationTable,
