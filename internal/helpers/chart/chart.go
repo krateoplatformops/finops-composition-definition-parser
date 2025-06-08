@@ -171,7 +171,7 @@ func downloadAndExtractTgz(tgz []byte, extractPath string) error {
 		target := filepath.Join(extractPath, header.Name)
 		dir := filepath.Dir(target)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("error creating directory: %v", err)
+			return fmt.Errorf("error creating directory: path %s - err %v", dir, err)
 		}
 
 		if header.Typeflag == tar.TypeDir {
