@@ -38,6 +38,6 @@ COPY --from=builder /bin/finops-composition-definition-parser /bin/finops-compos
 
 USER nonroot:nonroot
 
-WORKDIR /temp
+WORKDIR /tmp
 
 ENTRYPOINT ["/bin/finops-composition-definition-parser"]
